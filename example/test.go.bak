@@ -1,0 +1,66 @@
+package main
+
+import (
+	"fmt"
+	"log"
+	"net"
+	"time"
+
+	"github.com/LIOU2021/tcp-pool/pool"
+)
+
+func main() {
+	address := "127.0.0.1:8000"
+	fmt.Printf("connecting to: %s\n", address)
+
+	pool := &pool.ConnPool{
+		Dial: func() (net.Conn, error) {
+			return net.Dial("tcp", address)
+		},
+		MaxIdle:  10,
+		MinIdle:  2,
+		IdleTime: 10 * time.Second,
+	}
+
+	pool.CreatePool()
+	fmt.Printf("init connections: %d\n", pool.GetConnsLen())
+	
+	go func() {
+		for {
+			fmt.Printf("connections: %d\n", pool.GetConnsLen())
+			time.Sleep(1 * time.Second)
+		}
+	}()
+
+	time.Sleep(2 * time.Second)
+	fmt.Println("test concurrency")
+	go func() {
+		for i := 0; i < 15; i++ {
+			go func(n int) {
+				for {
+					log.Printf("index: %d, try get conn\n", n)
+					conn, err := pool.Get()
+					if err != nil {
+						log.Printf("index: %d, pool get fail: %v\n", n, err)
+					}
+					log.Printf("index: %d, get conn. current conns: %d\n", n, pool.GetConnsLen())
+
+					time.Sleep(2 * time.Second)
+
+					// conn.Write([]byte("ping"))
+					conn.Write([]byte(fmt.Sprintf("echo %d", n)))
+
+					time.Sleep(2 * time.Second)
+					log.Printf("index: %d, put conn\n", n)
+					pool.Put(conn)
+
+					time.Sleep(3 * time.Second)
+				}
+			}(i)
+		}
+	}()
+
+	for {
+		time.Sleep(1 * time.Second)
+	}
+}
