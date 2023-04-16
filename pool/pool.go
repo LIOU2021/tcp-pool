@@ -16,6 +16,11 @@ type ConnPool struct {
 	IdleTime time.Duration // 閒置時間
 }
 
+type connWithTime struct {
+	net.Conn
+	t time.Time
+}
+
 func (p *ConnPool) CreatePool() {
 	for i := 0; i < p.MinIdle; i++ {
 		conn, err := p.Dial()
@@ -71,7 +76,19 @@ func (p *ConnPool) Put(conn net.Conn) error {
 	return nil
 }
 
-type connWithTime struct {
-	net.Conn
-	t time.Time
+func (p *ConnPool) Release() (err error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	ln := p.GetConnsLen()
+
+	for i := 0; i < ln; i++ {
+		conn := p.conns[0]
+		err = conn.Close()
+		if err != nil {
+			return
+		}
+		p.conns = p.conns[1:]
+	}
+
+	return
 }

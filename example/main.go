@@ -39,4 +39,5 @@ func main() {
 
 	pool.Put(conn)
 
+	pool.Release()
 }

@@ -4,6 +4,9 @@ import (
 	"fmt"
 	"log"
 	"net"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 
 	"github.com/LIOU2021/tcp-pool/pool"
@@ -24,7 +27,7 @@ func main() {
 
 	pool.CreatePool()
 	fmt.Printf("init connections: %d\n", pool.GetConnsLen())
-	
+
 	go func() {
 		for {
 			fmt.Printf("connections: %d\n", pool.GetConnsLen())
@@ -60,7 +63,10 @@ func main() {
 		}
 	}()
 
-	for {
-		time.Sleep(1 * time.Second)
-	}
+	quit := make(chan os.Signal, 1)
+	signal.Notify(quit, syscall.SIGINT, syscall.SIGTERM)
+	<-quit
+	pool.Release()
+	fmt.Println("release pool")
+	time.Sleep(5 * time.Second)
 }
