@@ -1,5 +1,7 @@
 package main
 
+// 测试大量重复请求使用pool状态与net关闭是否正常，
+
 import (
 	"fmt"
 	"log"

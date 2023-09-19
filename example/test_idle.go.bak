@@ -1,13 +1,6 @@
-# introduction
-- 底层采用带有头尾指标的ring buffer循环利用记忆体
-# ref
-- [golang 环形队列](https://juejin.cn/s/golang%20%E7%8E%AF%E5%BD%A2%E9%98%9F%E5%88%97)
-- [go语言数据结构 环形队列](https://cloud.tencent.com/developer/article/1165585)
-# tcp connect pool
-
-# example
-```go
 package main
+
+// 测试闲置过期删除是否正常
 
 import (
 	"fmt"
@@ -27,11 +20,28 @@ func main() {
 		},
 		MaxIdle:  10,
 		MinIdle:  2,
-		IdleTime: 10 * time.Second,
+		IdleTime: 2 * time.Second,
 	}
 
 	pool.CreatePool()
 
+	fmt.Println("wait 3 second")
+	time.Sleep(3 * time.Second)
+
+	for i := 0; i < 2; i++ {
+		send(pool)
+		time.Sleep(2 * time.Second) // 每次的连线都无法重复使用，因为idle >= 2 second
+	}
+
+	for i := 0; i < 2; i++ {
+		send(pool)
+	}
+
+	pool.Release()
+
+}
+
+func send(pool *pool.ConnPool) {
 	conn, err := pool.Get()
 	if err != nil {
 		log.Fatal(err)
@@ -47,8 +57,4 @@ func main() {
 	fmt.Println(string(buf[0:cnt]))
 
 	pool.Put(conn)
-
-	pool.Release()
 }
-
-```

@@ -11,7 +11,7 @@ type ConnPool struct {
 	Dial     func() (net.Conn, error) // 連線方式
 	MaxIdle  int                      // 最大閒置連線數量
 	MinIdle  int                      // 最小閒置連線數量
-	conns    chan *connWithTime
+	conns    *circularQueue
 	mu       sync.Mutex
 	IdleTime time.Duration // 閒置時間
 }
@@ -22,7 +22,8 @@ type connWithTime struct {
 }
 
 func (p *ConnPool) CreatePool() {
-	p.conns = make(chan *connWithTime, p.MaxIdle)
+	p.conns = newCircularQueue(p.MaxIdle)
+
 	for i := 0; i < p.MinIdle; i++ {
 		conn, err := p.Dial()
 		if err != nil {
@@ -35,19 +36,17 @@ func (p *ConnPool) CreatePool() {
 			t:    time.Now(),
 		}
 
-		p.conns <- con
+		p.conns.enqueue(con)
 	}
 }
 
 func (p *ConnPool) GetConnsLen() int {
-	return len(p.conns)
+	return p.conns.size()
 }
 
-func (p *ConnPool) Get() (net.Conn, error) {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if len(p.conns) < 1 {
+func (p *ConnPool) getInstance() (net.Conn, error) {
+	conn := p.conns.dequeue()
+	if conn == nil {
 		conn, err := p.Dial()
 		if err != nil {
 			return nil, err
@@ -56,35 +55,35 @@ func (p *ConnPool) Get() (net.Conn, error) {
 		return conn, nil
 	}
 
-	conn := <-p.conns
-	if p.IdleTime > 0 && time.Since(conn.t) > p.IdleTime {
+	if p.IdleTime > 0 && time.Since(conn.t) > p.IdleTime { // 判断闲置并移除
 		conn.Close()
-		return p.Get()
+		conn = nil
+		return p.getInstance()
 	}
 
 	return conn.Conn, nil
 }
 
-func (p *ConnPool) Put(conn net.Conn) error {
+func (p *ConnPool) Get() (net.Conn, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	if p.MaxIdle > 0 && len(p.conns) >= p.MaxIdle {
-		conn.Close()
-		return nil
-	}
-	p.conns <- &connWithTime{conn, time.Now()}
-	return nil
+
+	return p.getInstance()
 }
 
-func (p *ConnPool) Release() (err error) {
+func (p *ConnPool) Put(conn net.Conn) bool {
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	close(p.conns)
-	for i := range p.conns {
-		err = i.Close()
-		if err != nil {
-			return
-		}
-	}
-	return
+
+	return p.conns.enqueue(&connWithTime{conn, time.Now()})
+}
+
+func (p *ConnPool) Release() bool {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+
+	p.conns.each(func(node *connWithTime) {
+		node.Close()
+	})
+	return p.conns.clear()
 }
